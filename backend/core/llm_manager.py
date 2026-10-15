@@ -110,7 +110,16 @@ class LLMManager:
             "model_name": "qwen-plus",
             "chunk_size": 5000,
             "min_score_threshold": 0.7,
-            "max_clips_per_collection": 5
+            "max_clips_per_collection": 5,
+            "hook_first": True,
+            "min_hook_score": 7,
+            "min_clip_sec": 15,
+            "max_clip_sec": 45,
+            "preroll_sec": 0.2,
+            "cold_open": False,
+            "vertical": False,
+            "burn_captions": False
+
         }
         
         self._settings_mtime = self._current_settings_mtime()

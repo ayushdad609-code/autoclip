@@ -21,21 +21,24 @@ MIN_SCORE_OVERRIDE: Optional[float] = None
 
 
 def resolve_min_score_threshold() -> float:
-    """显式覆盖 > 设置页「最低评分阈值」（settings.json，热重载）> 代码默认 0.7。
-    设置页那个值以前只改了 API 进程的内存，流水线从来没读过。"""
-    if MIN_SCORE_OVERRIDE is not None:
-        return float(MIN_SCORE_OVERRIDE)
-    try:
-        from ..core.llm_manager import get_llm_manager
-        value = get_llm_manager().get_processing_setting("min_score_threshold")
-        if value is not None:
-            value = float(value)
-            if 0.0 < value <= 1.0:
-                return value
-            logger.warning(f"设置页的最低评分阈值 {value} 不在 (0, 1]，使用默认 {MIN_SCORE_THRESHOLD}")
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"读取设置页评分阈值失败，使用默认值: {e}")
-    return float(MIN_SCORE_THRESHOLD)
+    """显式覆盖 > 设置页「最低评分阈值」（settings.json，热重载）> 代码默认 0.7。"""
+    val = MIN_SCORE_OVERRIDE
+    if val is None:
+        try:
+            from ..core.llm_manager import get_llm_manager
+            val = get_llm_manager().get_processing_setting("min_score_threshold")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"读取设置页评分阈值失败，使用默认值: {e}")
+    if val is not None:
+        try:
+            f = float(val)
+            # 兼容 0-10 (如 7.0) 和 0-1 (如 0.7) 尺度
+            return f / 10.0 if f > 1.0 else f
+        except (ValueError, TypeError):
+            pass
+    default_th = float(MIN_SCORE_THRESHOLD)
+    return default_th / 10.0 if default_th > 1.0 else default_th
+
 
 class ClipScorer:
     """内容评分器"""
@@ -92,7 +95,36 @@ class ClipScorer:
         for scored_chunk_items in map_chunks(score_chunk, timeline_by_chunk.items()):
             all_scored_clips.extend(scored_chunk_items)
 
-        # 4. 按最终得分对所有结果进行排序
+        # 4. Hook-First 过滤与起点校正
+        from .settings import get_hook_first, get_min_hook_score
+        if get_hook_first() and all_scored_clips:
+            min_hook = get_min_hook_score(7.0)
+            valid_clips = []
+            for clip in all_scored_clips:
+                h_score = clip.get('hook_score')
+                s_score = clip.get('standalone_score')
+                if h_score is not None and float(h_score) < min_hook:
+                    logger.info(f"片段 {clip.get('id')} 被 Hook 规则过滤: hook_score={h_score} < {min_hook}")
+                    continue
+                if s_score is not None and float(s_score) < 6.0:
+                    logger.info(f"片段 {clip.get('id')} 被 Hook 规则过滤: standalone_score={s_score} < 6.0")
+                    continue
+                valid_clips.append(clip)
+
+            if not valid_clips and all_scored_clips:
+                logger.warning("所有片段均未通过 Hook 过滤门槛，启用鲁棒兜底保留最高分候选")
+                valid_clips = all_scored_clips
+            all_scored_clips = valid_clips
+
+            # 剪辑起点必须以 hook_start 为准，绝不要以话题起点为准
+            for clip in all_scored_clips:
+                h_start = clip.get('hook_start')
+                if h_start:
+                    if 'topic_start_time' not in clip:
+                        clip['topic_start_time'] = clip.get('start_time')
+                    clip['start_time'] = h_start
+
+        # 5. 按最终得分对所有结果进行排序
         if all_scored_clips:
             all_scored_clips.sort(key=lambda x: x.get('final_score', 0), reverse=True)
             # 保持Step 2分配的固定ID，不再重新分配
@@ -129,9 +161,12 @@ class ClipScorer:
                     "content": clip.get('content'),
                     "start_time": clip.get('start_time'),
                     "end_time": clip.get('end_time'),
+                    "hook_start": clip.get('hook_start'),
+                    "hook_text": clip.get('hook_text'),
                     "transcript": self._excerpt(clip),
                 } for clip in clips
             ]
+
 
             parsed_list = self.scoring_backend.score(input_for_llm)
             source = "llm" if isinstance(self.scoring_backend, LLMScoringBackend) else "backend"

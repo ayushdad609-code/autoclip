@@ -30,6 +30,14 @@ class ProcessingSettings(BaseModel):
     min_score_threshold: float = Field(default=0.7, validation_alias=AliasChoices('PROCESSING_MIN_SCORE_THRESHOLD'))
     max_clips_per_collection: int = Field(default=5, validation_alias=AliasChoices('PROCESSING_MAX_CLIPS_PER_COLLECTION'))
     max_retries: int = Field(default=3, validation_alias=AliasChoices('PROCESSING_MAX_RETRIES'))
+    hook_first: bool = Field(default=True, validation_alias=AliasChoices('PROCESSING_HOOK_FIRST', 'HOOK_FIRST'))
+    min_hook_score: float = Field(default=7.0, validation_alias=AliasChoices('PROCESSING_MIN_HOOK_SCORE', 'MIN_HOOK_SCORE'))
+    min_clip_sec: int = Field(default=15, validation_alias=AliasChoices('PROCESSING_MIN_CLIP_SEC', 'MIN_CLIP_SEC'))
+    max_clip_sec: int = Field(default=45, validation_alias=AliasChoices('PROCESSING_MAX_CLIP_SEC', 'MAX_CLIP_SEC'))
+    preroll_sec: float = Field(default=0.2, validation_alias=AliasChoices('PROCESSING_PREROLL_SEC', 'PREROLL_SEC'))
+    cold_open: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_COLD_OPEN', 'COLD_OPEN'))
+    vertical: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_VERTICAL', 'VERTICAL'))
+    burn_captions: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_BURN_CAPTIONS', 'BURN_CAPTIONS'))
 
 class LoggingSettings(BaseModel):
     """日志配置"""
@@ -57,6 +65,15 @@ class Settings(BaseSettings):
     processing_min_score_threshold: float = Field(default=0.7, validation_alias=AliasChoices('PROCESSING_MIN_SCORE_THRESHOLD'))
     processing_max_clips_per_collection: int = Field(default=5, validation_alias=AliasChoices('PROCESSING_MAX_CLIPS_PER_COLLECTION'))
     processing_max_retries: int = Field(default=3, validation_alias=AliasChoices('PROCESSING_MAX_RETRIES'))
+    hook_first: bool = Field(default=True, validation_alias=AliasChoices('PROCESSING_HOOK_FIRST', 'HOOK_FIRST'))
+    min_hook_score: float = Field(default=7.0, validation_alias=AliasChoices('PROCESSING_MIN_HOOK_SCORE', 'MIN_HOOK_SCORE'))
+    min_clip_sec: int = Field(default=15, validation_alias=AliasChoices('PROCESSING_MIN_CLIP_SEC', 'MIN_CLIP_SEC'))
+    max_clip_sec: int = Field(default=45, validation_alias=AliasChoices('PROCESSING_MAX_CLIP_SEC', 'MAX_CLIP_SEC'))
+    preroll_sec: float = Field(default=0.2, validation_alias=AliasChoices('PROCESSING_PREROLL_SEC', 'PREROLL_SEC'))
+    cold_open: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_COLD_OPEN', 'COLD_OPEN'))
+    vertical: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_VERTICAL', 'VERTICAL'))
+    burn_captions: bool = Field(default=False, validation_alias=AliasChoices('PROCESSING_BURN_CAPTIONS', 'BURN_CAPTIONS'))
+
     log_level: str = Field(default='INFO', validation_alias=AliasChoices('LOG_LEVEL'))
     log_format: str = Field(default='%(asctime)s - %(name)s - %(levelname)s - %(message)s', validation_alias=AliasChoices('LOG_FORMAT'))
     log_file: str = Field(default='backend.log', validation_alias=AliasChoices('LOG_FILE'))

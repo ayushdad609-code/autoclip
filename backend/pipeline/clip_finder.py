@@ -36,14 +36,16 @@ CJK = re.compile(r'[\u4e00-\u9fff]')
 
 
 def short_video_profile(profile: DurationProfile) -> DurationProfile:
-    """Clip lengths for short-video platforms.
-
-    The legacy long-video tier (90 s minimum, 2–6 min target) was a podcast-clip rule; padding a
-    60 s answer to 90 s drags in the next question. Short sources keep their own tighter tier.
-    """
+    """Clip lengths for short-video platforms."""
+    from .settings import get_hook_first, get_min_clip_sec, get_max_clip_sec
+    if get_hook_first():
+        min_sec = float(get_min_clip_sec(15))
+        max_sec = float(get_max_clip_sec(45))
+        return dataclasses.replace(profile, min_clip_sec=min_sec, target_clip_sec=(min_sec, max_sec), max_clip_sec=max_sec)
     if profile.tier == 'short':
         return profile
     return dataclasses.replace(profile, min_clip_sec=60, target_clip_sec=(90, 180), max_clip_sec=300)
+
 
 
 class ClipFinderError(RuntimeError):

@@ -34,11 +34,17 @@ class TimelineExtractor:
         prompt_files_to_use = prompt_files if prompt_files is not None else PROMPT_FILES
         with open(prompt_files_to_use['timeline'], 'r', encoding='utf-8') as f:
             self.timeline_prompt = f.read()
+
+        from .settings import get_hook_first
+        from ..core.shared_config import inject_hook_rubric
+        if get_hook_first():
+            self.timeline_prompt = inject_hook_rubric(self.timeline_prompt, step="timeline")
             
         # SRT块的目录
         self.srt_chunks_dir = self.metadata_dir / "step1_srt_chunks"
         self.timeline_chunks_dir = self.metadata_dir / "step2_timeline_chunks"
         self.llm_raw_output_dir = self.metadata_dir / "step2_llm_raw_output"
+
 
     def extract_timeline(self, outlines: List[Dict]) -> List[Dict]:
         """
@@ -74,7 +80,18 @@ class TimelineExtractor:
 
         # 时长画像追加到提示词（覆盖提示词里写死的 90 秒 / 3–6 分钟）
         from .quality import load_profile
+        from .settings import get_hook_first, get_min_clip_sec, get_max_clip_sec
         profile = load_profile(self.metadata_dir)
+        if profile and get_hook_first():
+            import dataclasses
+            min_sec = float(get_min_clip_sec(15))
+            max_sec = float(get_max_clip_sec(45))
+            profile = dataclasses.replace(
+                profile,
+                min_clip_sec=min_sec,
+                max_clip_sec=max_sec,
+                target_clip_sec=(min_sec, max_sec)
+            )
         timeline_prompt = self.timeline_prompt + (profile.prompt_hint() if profile else "")
 
         # 2. 按 chunk_index 对所有大纲进行分组
@@ -175,8 +192,9 @@ class TimelineExtractor:
                             parsed = parsed_items
                             break
                         input_data['additional_instruction'] = (
-                            "仅返回有效 JSON 数组，使用英文双引号；起止时间必须引用当前字幕块，结束晚于开始。"
+                            "仅返回有效 JSON 数组，使用英文双引号；必须包含 hook_start、hook_text、start_time、end_time；起止时间必须引用当前字幕块，结束晚于开始。"
                         )
+
                     except Exception as parse_error:
                         chunk_report["outcome"] = "chunk_error"
                         logger.error("块 %s 第 %s 次解析失败: %s", chunk_index, retry_count + 1, parse_error)
@@ -313,10 +331,46 @@ class TimelineExtractor:
                         reasons["outside_chunk_or_reversed"] += 1
                         logger.warning("  > 时间区间倒序或不在当前字幕块内，跳过: %s", timeline_item)
                         continue
+                    # Hook-first 字段处理与安全回退
+                    from .settings import get_hook_first
+                    is_hook_first = get_hook_first()
+                    hook_start_val = timeline_item.get('hook_start')
+                    hook_text_val = timeline_item.get('hook_text')
+                    
+                    if hook_start_val and self._validate_time_format(str(hook_start_val)):
+                        try:
+                            hook_sec = self._timeline_seconds(hook_start_val)
+                            hook_sec = max(hook_sec, chunk_start_sec)
+                            hook_sec = min(hook_sec, chunk_end_sec)
+                            timeline_item['hook_start'] = to_srt_time(hook_sec)
+                            timeline_item['hook_text'] = str(hook_text_val or "")
+                            if is_hook_first and hook_sec < end_sec:
+                                timeline_item['topic_start_time'] = to_srt_time(start_sec)
+                                start_sec = hook_sec
+                        except Exception as hook_err:
+                            logger.warning(f"  > 解析 hook_start 失败: {hook_err}，回退到 start_time")
+                            timeline_item['hook_start'] = to_srt_time(start_sec)
+                            timeline_item['hook_text'] = str(hook_text_val or "")
+                    else:
+                        if is_hook_first:
+                            logger.warning(f"  > 话题 '{timeline_item['outline']}' 缺少有效 hook_start，回退到普通 start_time")
+                        timeline_item['hook_start'] = to_srt_time(start_sec)
+                        timeline_item['hook_text'] = str(hook_text_val or "")
+
+                    # 提取 hook 各维度评分（若有）
+                    for score_key in ('hook_score', 'standalone_score', 'emotion_score', 'payoff_score'):
+                        val = timeline_item.get(score_key)
+                        if val is not None and not isinstance(val, bool):
+                            try:
+                                timeline_item[score_key] = float(val)
+                            except (ValueError, TypeError):
+                                pass
+
                     # Normalize before downstream sorting: .5 means half a second,
                     # not five milliseconds, and MM:SS must gain the hours field.
                     timeline_item['start_time'] = to_srt_time(start_sec)
                     timeline_item['end_time'] = to_srt_time(end_sec)
+
 
                     logger.info(f"  > 定位成功: {timeline_item['outline']} ({timeline_item['start_time']} -> {timeline_item['end_time']})")
                     validated_items.append(timeline_item)

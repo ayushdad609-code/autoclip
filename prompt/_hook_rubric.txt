@@ -1,0 +1,30 @@
+### HOOK-FIRST SELECTION RUBRIC (SHORT-FORM VIDEO RETENTION) ###
+Goal: Identify and cut clips that START AT THE HOOK (the single most gripping moment), NOT at the beginning of a topic segment or introduction. Aim for maximum retention and virality on YouTube Shorts, Instagram Reels, and TikTok.
+
+1. What is a Hook?
+- A hook is the single most gripping line, statement, or moment in the segment that immediately halts scrolling.
+- VALID HOOKS: A shocking claim, punchline, bold/unpopular opinion, surprising fact or statistic, intense conflict/debate, powerful emotion (awe, outrage, laughter), or an irresistible curiosity-inducing question.
+- NOT A HOOK: Greetings ("Hello everyone", "Welcome back"), speaker introductions, "Today we will talk about...", throat-clearing, filler words, lengthy background context, or slow conceptual setups.
+
+2. Hook-First Timing:
+- hook_start: Exact timestamp of the single most gripping line (format: HH:MM:SS,mmm or HH:MM:SS.mmm). The clip must start here, never at the topic intro.
+- hook_text: The verbatim text of that gripping opening line.
+- end_time: The clip must end on the PAYOFF (the resolution, insight, or punchline) or a deliberate cliffhanger. NEVER end mid-sentence or cut off mid-thought.
+- Duration: 15 to 45 seconds. Keep clips punchy and focused.
+
+3. Scoring Criteria (0 to 10 Scale):
+- hook_score (0-10): How compelling is the opening hook? (10 = irresistible scroll-stopper; 0 = dull greeting, intro, or filler).
+- standalone_score (0-10): Can a viewer immediately understand and appreciate this clip without having heard previous context? (10 = completely self-contained; < 6 = requires prior context to make sense).
+- emotion_score (0-10): Emotional intensity (curiosity, shock, laughter, empathy, disagreement).
+- payoff_score (0-10): How satisfying is the conclusion/payoff or suspenseful cliffhanger?
+
+4. Weighted Final Score:
+final_score = (hook_score * 0.40) + (standalone_score * 0.20) + (emotion_score * 0.20) + (payoff_score * 0.20)
+
+5. Minimum Quality Thresholds:
+- Reject any clip with hook_score < 7.
+- Reject any clip with standalone_score < 6 (dependent on earlier context).
+
+6. Language Instruction:
+- Works with any transcript language (English, Hindi, Chinese, Spanish, etc.).
+- Always reply in the primary language of the transcript/content. Keep titles and reasons natural in that language.

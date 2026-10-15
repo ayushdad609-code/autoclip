@@ -7,10 +7,23 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from pydantic import BaseModel, validator
+try:
+    from pydantic import BaseModel, validator
+except ImportError:
+    class BaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+        def dict(self):
+            return dict(self.__dict__)
+    def validator(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
 from enum import Enum
 
 from . import path_utils
+
 
 # 视频分类枚举
 class VideoCategory(str, Enum):
@@ -99,8 +112,67 @@ PROMPT_FILES = {
     "recommendation": PROMPT_DIR / "推荐理由.txt",
     "title": PROMPT_DIR / "标题生成.txt",
     "clustering": PROMPT_DIR / "主题聚类.txt",
-    "collection_title": PROMPT_DIR / "collection_title.txt"
+    "collection_title": PROMPT_DIR / "collection_title.txt",
+    "hook_rubric": PROMPT_DIR / "_hook_rubric.txt"
 }
+
+HOOK_RUBRIC_FILE = PROMPT_DIR / "_hook_rubric.txt"
+
+def get_hook_rubric() -> str:
+    """获取Hook评估标准（单一共用文件）"""
+    candidates = [
+        HOOK_RUBRIC_FILE,
+        PROJECT_ROOT / "prompt" / "_hook_rubric.txt",
+        Path(__file__).parent.parent / "prompt" / "_hook_rubric.txt",
+        Path(__file__).parent.parent.parent / "prompt" / "_hook_rubric.txt",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                return p.read_text(encoding="utf-8")
+            except Exception:
+                pass
+    return ""
+
+def inject_hook_rubric(base_prompt: str, step: str = "timeline") -> str:
+    """将Hook评分标准注入到提示词中"""
+    rubric = get_hook_rubric()
+    if not rubric or "### HOOK-FIRST SELECTION RUBRIC" in base_prompt:
+        return base_prompt
+
+    if step == "timeline":
+        instruction = (
+            "\n\n---\n"
+            + rubric
+            + "\n\n## Hook-First 提取执行契约（极重要）：\n"
+            + "1. 必须优先定位话题中最抓人、最具张力的核心 Hook 语句，记录为 hook_start 和 hook_text。\n"
+            + "2. 最终剪辑的起点必须以 hook_start 为准，绝不要包含冗长的开场寒暄或背景铺垫。\n"
+            + "3. 结束时间 end_time 必须落在高潮回答、包袱或悬念（payoff）说完处，严禁半句话中断。\n"
+            + "4. 时长务必控制在 15-45 秒之间。\n"
+            + "5. 评估 hook_score (0-10)、standalone_score (0-10)、emotion_score (0-10)、payoff_score (0-10)。\n"
+            + "6. 无论原文是什么语言（中文、英文、印地语等），严格按照原文语言输出。\n"
+            + "7. 输出 JSON 格式：\n"
+            + '[{"outline":"话题标题","hook_start":"00:01:23,456","hook_text":"核心金句","start_time":"00:01:23,456","end_time":"00:01:53,456","topic_start_time":"00:01:10,000","hook_score":9.0,"standalone_score":8.0,"emotion_score":8.0,"payoff_score":9.0,"content":["要点1"]}]\n'
+        )
+    elif step == "scoring":
+        instruction = (
+            "\n\n---\n"
+            + rubric
+            + "\n\n## Hook-First 评分执行契约：\n"
+            + "请依据 transcript 原文及 Hook 表现，对每个候选片段评分：\n"
+            + "- hook_score (0-10)：开头抓人程度\n"
+            + "- standalone_score (0-10)：无前置背景下的独立可理解度（<6 则理解困难）\n"
+            + "- emotion_score (0-10)：情绪张力\n"
+            + "- payoff_score (0-10)：结尾包袱或核心观点交付度\n"
+            + "- final_score = (hook_score * 0.40) + (standalone_score * 0.20) + (emotion_score * 0.20) + (payoff_score * 0.20)\n"
+            + "输出 JSON 格式：\n"
+            + '[{"id":"原id","outline":"原outline","hook_start":"00:01:23,456","hook_text":"核心金句","hook_score":8.5,"standalone_score":7.5,"emotion_score":8.0,"payoff_score":8.5,"final_score":8.2,"recommend_reason":"推荐理由"}]\n'
+        )
+    else:
+        instruction = "\n\n---\n" + rubric
+
+    return base_prompt + instruction
+
 
 # API配置
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
@@ -144,18 +216,25 @@ class Settings(BaseModel):
     target_topic_duration_minutes: int = 5
     min_topics_per_chunk: int = 3
     max_topics_per_chunk: int = 8
+    # Hook-first 配置
+    hook_first: bool = True
+    min_hook_score: float = 7.0
+    min_clip_sec: int = 15
+    max_clip_sec: int = 45
+    preroll_sec: float = 0.2
+    cold_open: bool = False
+    vertical: bool = False
+    burn_captions: bool = False
+    hook_weight: float = 0.4
+    standalone_weight: float = 0.2
+    emotion_weight: float = 0.2
+    payoff_weight: float = 0.2
+
     # 语音识别配置
     speech_recognition_method: str = "whisper_local"
     speech_recognition_language: str = "auto"
     speech_recognition_model: str = "base"
     speech_recognition_timeout: int = 1000
-    # B站上传配置 (已移除 bilitool 相关功能)
-    # bilibili_auto_upload: bool = False
-    # bilibili_default_tid: int = 21  # 默认分区：日常
-    # bilibili_max_concurrent_uploads: int = 3
-    # bilibili_upload_timeout_minutes: int = 30
-    # bilibili_auto_generate_tags: bool = True
-    # bilibili_tag_limit: int = 12
     
     @validator('min_score_threshold')
     def validate_score_threshold(cls, v):
@@ -185,6 +264,19 @@ class ProcessingConfig:
     max_clips_per_collection: int = 5
     max_retries: int = 3
     timeout_seconds: int = 30
+    hook_first: bool = True
+    min_hook_score: float = 7.0
+    min_clip_sec: int = 15
+    max_clip_sec: int = 45
+    preroll_sec: float = 0.2
+    cold_open: bool = False
+    vertical: bool = False
+    burn_captions: bool = False
+    hook_weight: float = 0.4
+    standalone_weight: float = 0.2
+    emotion_weight: float = 0.2
+    payoff_weight: float = 0.2
+
 
 # @dataclass
 # class BilibiliConfig:
@@ -422,5 +514,14 @@ def get_legacy_config() -> Dict[str, Any]:
         'MAX_TOPIC_DURATION_MINUTES': MAX_TOPIC_DURATION_MINUTES,
         'TARGET_TOPIC_DURATION_MINUTES': TARGET_TOPIC_DURATION_MINUTES,
         'MIN_TOPICS_PER_CHUNK': MIN_TOPICS_PER_CHUNK,
-        'MAX_TOPICS_PER_CHUNK': MAX_TOPICS_PER_CHUNK
+        'MAX_TOPICS_PER_CHUNK': MAX_TOPICS_PER_CHUNK,
+        'HOOK_FIRST': True,
+        'MIN_HOOK_SCORE': 7.0,
+        'MIN_CLIP_SEC': 15,
+        'MAX_CLIP_SEC': 45,
+        'PREROLL_SEC': 0.2,
+        'COLD_OPEN': False,
+        'VERTICAL': False,
+        'BURN_CAPTIONS': False
     }
+

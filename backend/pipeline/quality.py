@@ -293,6 +293,22 @@ def refine_timeline(items: Sequence[Dict[str, Any]], srt_entries: Sequence[Dict[
         profile = profile_for(cues[-1].end if cues else 0)
     video_end = cues[-1].end if cues else None
 
+    # Hook-first 时长覆盖：15-45秒
+    try:
+        from .settings import get_hook_first, get_min_clip_sec, get_max_clip_sec
+        if get_hook_first():
+            import dataclasses
+            min_sec = float(get_min_clip_sec(15))
+            max_sec = float(get_max_clip_sec(45))
+            profile = dataclasses.replace(
+                profile,
+                min_clip_sec=min_sec,
+                max_clip_sec=max_sec,
+                target_clip_sec=(min_sec, max_sec)
+            )
+    except Exception:
+        pass
+
     report: Dict[str, Any] = {
         "profile": profile.to_dict(),
         "input": len(items),
@@ -302,6 +318,7 @@ def refine_timeline(items: Sequence[Dict[str, Any]], srt_entries: Sequence[Dict[
         "extended": 0,
         "trimmed": 0,
     }
+
 
     # 1) 解析 + 吸附
     parsed: List[Dict[str, Any]] = []
@@ -510,7 +527,24 @@ def align_scores(clips: Sequence[Dict[str, Any]], llm_results: Any,
             r = by_outline.get(_score_outline(c))
         if positional and isinstance(results[i], dict):
             r = results[i]
-        score = _to_score(r.get("final_score")) if r else None
+        if r and isinstance(r, dict):
+            for hook_field in ("hook_start", "hook_text", "hook_score", "standalone_score", "emotion_score", "payoff_score", "topic_start_time"):
+                if r.get(hook_field) is not None:
+                    c[hook_field] = r[hook_field]
+            h_s = r.get("hook_score")
+            s_s = r.get("standalone_score")
+            e_s = r.get("emotion_score")
+            p_s = r.get("payoff_score")
+            if all(v is not None for v in (h_s, s_s, e_s, p_s)):
+                try:
+                    w_sum = float(h_s) * 0.4 + float(s_s) * 0.2 + float(e_s) * 0.2 + float(p_s) * 0.2
+                    c["final_score_10"] = round(w_sum, 2)
+                    if score is None:
+                        score = round(w_sum / 10.0 if w_sum <= 10.0 else w_sum / 100.0, 2)
+                except Exception:
+                    pass
+
+        score = _to_score(r.get("final_score")) if (r and r.get("final_score") is not None) else score
         if score is None:
             c["final_score"] = default_score
             c["recommend_reason"] = (r or {}).get("recommend_reason") or "未评分（自动兜底）"
@@ -518,7 +552,7 @@ def align_scores(clips: Sequence[Dict[str, Any]], llm_results: Any,
             stats["fallback"] += 1
         else:
             c["final_score"] = score
-            c["recommend_reason"] = r.get("recommend_reason") or ""
+            c["recommend_reason"] = (r or {}).get("recommend_reason") or ""
             c["score_source"] = score_source
             stats["matched"] += 1
         out.append(c)
@@ -559,9 +593,15 @@ def select_clips(scored: Sequence[Dict[str, Any]], threshold: float,
     min_keep = profile.min_keep if profile else 2
     max_clips = profile.max_clips if profile else 12
     items = [dict(c) for c in scored]
+    t = float(threshold)
+    has_sub_one = any(0.0 <= float(c.get("final_score") or 0) <= 1.0 for c in items)
+    if t > 1.0 and has_sub_one:
+        t = t / 10.0
+
     ranked = sorted(items, key=lambda c: float(c.get("final_score") or 0), reverse=True)
 
-    chosen = [c for c in ranked if float(c.get("final_score") or 0) >= threshold]
+    chosen = [c for c in ranked if float(c.get("final_score") or 0) >= t]
+
     for c in chosen:
         c["selected_by"] = "threshold"
     fallback = 0

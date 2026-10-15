@@ -1,0 +1,13 @@
+{
+  "hook_first": true,
+  "min_hook_score": 7,
+  "min_clip_sec": 15,
+  "max_clip_sec": 45,
+  "preroll_sec": 0.2,
+  "cold_open": false,
+  "vertical": false,
+  "burn_captions": false,
+  "chunk_size": 5000,
+  "min_score_threshold": 7.0,
+  "max_clips_per_collection": 10
+}
