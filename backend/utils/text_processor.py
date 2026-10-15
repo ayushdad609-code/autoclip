@@ -19,7 +19,10 @@ except ImportError:
         sys.path.insert(0, str(backend_path))
     from core.shared_config import CHUNK_SIZE
 
-import pysrt
+try:
+    import pysrt
+except ImportError:
+    pysrt = None
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +222,38 @@ class TextProcessor:
         if srt_path.stat().st_size == 0:
             logger.warning(f"SRT文件为空: {srt_path}")
             return []
+
+        if pysrt is None:
+            try:
+                try:
+                    content = srt_path.read_text(encoding='utf-8')
+                except UnicodeDecodeError:
+                    content = srt_path.read_text(encoding='utf-8-sig', errors='ignore')
+                subtitles = []
+                blocks = re.split(r'\n\s*\n', content.strip())
+                for idx, block in enumerate(blocks, 1):
+                    lines = [line.strip() for line in block.splitlines() if line.strip()]
+                    if not lines:
+                        continue
+                    time_line_idx = 0
+                    if lines[0].isdigit() and len(lines) > 1:
+                        time_line_idx = 1
+                    if time_line_idx < len(lines):
+                        m = re.match(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})', lines[time_line_idx])
+                        if m:
+                            s_time = m.group(1).replace('.', ',')
+                            e_time = m.group(2).replace('.', ',')
+                            txt = " ".join(lines[time_line_idx + 1:])
+                            subtitles.append({
+                                'start_time': s_time,
+                                'end_time': e_time,
+                                'text': txt,
+                                'index': idx
+                            })
+                return subtitles
+            except Exception as e:
+                logger.error(f"标准库解析SRT文件'{srt_path}'失败: {e}", exc_info=True)
+                return []
 
         try:
             try:

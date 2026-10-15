@@ -148,20 +148,35 @@ class VideoProcessor:
             return start_sec
 
         best_cue = None
+        # 1. 优先吸附到起止点在 start_sec 附近的字幕（0.5秒内），避免前一条字幕的尾部边界抢占
         for cue in cues:
             try:
                 s_str = VideoProcessor.convert_srt_time_to_ffmpeg_time(cue['start_time'])
-                e_str = VideoProcessor.convert_srt_time_to_ffmpeg_time(cue['end_time'])
                 s = VideoProcessor.convert_ffmpeg_time_to_seconds(s_str)
-                e = VideoProcessor.convert_ffmpeg_time_to_seconds(e_str)
-                if s <= start_sec <= e:
-                    best_cue = (cue, s, e)
-                    break
-                if abs(s - start_sec) <= 1.0:
+                if abs(s - start_sec) <= 0.5:
+                    e_str = VideoProcessor.convert_srt_time_to_ffmpeg_time(cue['end_time'])
+                    e = VideoProcessor.convert_ffmpeg_time_to_seconds(e_str)
                     best_cue = (cue, s, e)
                     break
             except Exception:
                 continue
+
+        # 2. 若未落在字幕开头附近，寻找包含当前时间点的字幕
+        if not best_cue:
+            for cue in cues:
+                try:
+                    s_str = VideoProcessor.convert_srt_time_to_ffmpeg_time(cue['start_time'])
+                    e_str = VideoProcessor.convert_srt_time_to_ffmpeg_time(cue['end_time'])
+                    s = VideoProcessor.convert_ffmpeg_time_to_seconds(s_str)
+                    e = VideoProcessor.convert_ffmpeg_time_to_seconds(e_str)
+                    if s <= start_sec < e:
+                        best_cue = (cue, s, e)
+                        break
+                    if abs(s - start_sec) <= 1.0:
+                        best_cue = (cue, s, e)
+                        break
+                except Exception:
+                    continue
 
         if not best_cue:
             return start_sec

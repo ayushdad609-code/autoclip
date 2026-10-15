@@ -80,6 +80,7 @@ data/output/
 data/backups/
 data/cache/
 backend/data/
+data/synthetic_test/
 
 # 前端依赖与构建产物
 node_modules/
