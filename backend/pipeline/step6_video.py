@@ -54,14 +54,30 @@ class VideoGenerator:
                 'id': clip['id'],
                 'title': clip.get('generated_title', f"片段_{clip['id']}"),
                 'start_time': clip['start_time'],
-                'end_time': clip['end_time']
+                'end_time': clip['end_time'],
+                'hook_start': clip.get('hook_start'),
+                'hook_text': clip.get('hook_text'),
+                'topic_start_time': clip.get('topic_start_time'),
             })
         
+        # 寻找对应的SRT字幕文件
+        srt_path = None
+        candidates = [
+            self.metadata_dir / "input.srt" if self.metadata_dir else None,
+            input_video.with_suffix('.srt'),
+            self.metadata_dir.parent / "raw" / "input.srt" if self.metadata_dir and self.metadata_dir.parent else None,
+        ]
+        for c in candidates:
+            if c and Path(c).exists():
+                srt_path = Path(c)
+                break
+
         # 批量生成切片
-        successful_clips = self.video_processor.batch_extract_clips(input_video, clips_data)
+        successful_clips = self.video_processor.batch_extract_clips(input_video, clips_data, srt_path=srt_path)
         
         logger.info(f"切片视频生成完成，共{len(successful_clips)}个切片")
         return successful_clips
+
     
     def generate_collections(self, collections_data: List[Dict]) -> List[Dict]:
         """
